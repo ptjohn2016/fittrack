@@ -226,8 +226,15 @@ body { display: flex; flex-direction: column; }
 }
 .aw-exercise-name { font-size: 24px; font-weight: 700; }
 .aw-set-info { font-size: 16px; color: var(--text-secondary); }
-.aw-set-detail { font-size: 40px; font-weight: 800; color: var(--primary); line-height: 1.1; }
-.aw-set-detail small { font-size: 18px; font-weight: 500; color: var(--text-secondary); }
+.aw-set-detail { font-size: 40px; font-weight: 800; color: var(--primary); line-height: 1.1; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
+.aw-set-detail small { font-size: 18px; font-weight: 500; color: var(--text-secondary); margin: 0 4px; }
+.aw-inline-input {
+  width: 80px; font-family: inherit; font-size: 36px; font-weight: 800;
+  color: var(--primary); background: transparent; border: none;
+  border-bottom: 3px dashed var(--primary); text-align: center;
+  padding: 0; margin: 0 4px; border-radius: 0;
+}
+.aw-inline-input:focus { outline: none; border-bottom-style: solid; }
 .aw-rest-preview { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
 .aw-footer {
   padding: 20px; padding-bottom: calc(20px + var(--safe-bottom));
@@ -404,7 +411,6 @@ body { display: flex; flex-direction: column; }
     </button>
   </div>
 </div>
-<!-- Exercise Modal - overlay click does NOT close -->
 <div class="modal-overlay" id="exercise-modal">
   <div class="modal" onclick="event.stopPropagation()">
     <h2 id="modal-title">Add Exercise</h2>
@@ -424,7 +430,6 @@ body { display: flex; flex-direction: column; }
     <button class="btn-primary outline" onclick="closeExerciseModal()" style="margin-top:8px;">Cancel</button>
   </div>
 </div>
-<!-- Day Name Modal - overlay click does NOT close -->
 <div class="modal-overlay" id="day-name-modal">
   <div class="modal" onclick="event.stopPropagation()">
     <h2 id="day-name-modal-title">New Workout Day</h2>
@@ -478,7 +483,7 @@ body { display: flex; flex-direction: column; }
     <p id="confirm-message">This action cannot be undone.</p>
     <div class="confirm-actions">
       <button class="cancel-btn" onclick="closeConfirm()">Cancel</button>
-      <button class="confirm-btn" id="confirm-action-btn">Delete</button>
+      <button class="confirm-btn" id="confirm-action-btn">Confirm</button>
     </div>
   </div>
 </div>
@@ -492,9 +497,11 @@ const firebaseConfig = {
   messagingSenderId: "1011901083055",
   appId: "1:1011901083055:web:ebf4ad58c5a7d96c74535a"
 };
+
+// Changed default sets to 1
 const DEFAULT_REPS = 10;
 const DEFAULT_REST = 60;
-const DEFAULT_NUM_SETS = 3;
+const DEFAULT_NUM_SETS = 1;
 
 let db, auth, uid;
 let workoutDays = {};
@@ -511,6 +518,27 @@ let awFlatSets = [];
 let awCurrentIndex = 0;
 let restTimerInterval = null;
 let restTimeRemaining = 0;
+let audioCtx;
+
+function initAudio() {
+  if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+}
+
+function playBeep() {
+  try {
+    if (!audioCtx) initAudio();
+    var osc = audioCtx.createOscillator();
+    var gainNode = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+  } catch(e) { console.warn("Audio playback issue:", e); }
+}
 
 function initFirebase() {
   try {
@@ -619,7 +647,7 @@ function saveDayName() {
 }
 function closeDayNameModal() { document.getElementById('day-name-modal').classList.remove('active'); }
 function confirmDeleteDay(dayId) {
-  showConfirm('Delete Workout Day', 'Delete "'+workoutDays[dayId].name+'" and all its exercises?', function(){ deleteDay(dayId); if (selectedDayId===dayId) switchTab('days'); });
+  showConfirm('Delete Workout Day', 'Delete "'+workoutDays[dayId].name+'" and all its exercises?', function(){ deleteDay(dayId); if (selectedDayId===dayId) switchTab('days'); }, 'Delete');
 }
 
 function moveExercise(exId, dir) {
@@ -724,10 +752,31 @@ function saveExercise() {
 }
 function confirmDeleteExercise(exId) {
   var ex = workoutDays[selectedDayId].exercises[exId];
-  showConfirm('Delete Exercise', 'Delete "'+ex.name+'"?', function(){ delete workoutDays[selectedDayId].exercises[exId]; saveDay(selectedDayId, workoutDays[selectedDayId]); });
+  showConfirm('Delete Exercise', 'Delete "'+ex.name+'"?', function(){ delete workoutDays[selectedDayId].exercises[exId]; saveDay(selectedDayId, workoutDays[selectedDayId]); }, 'Delete');
 }
 function toggleExComplete(exId) { var day = workoutDays[selectedDayId]; day.exercises[exId].completed = !day.exercises[exId].completed; saveDay(selectedDayId, day); }
 function updateSet(exId, setIdx, field, val) { var day = workoutDays[selectedDayId]; day.exercises[exId].sets[setIdx][field] = parseFloat(val)||0; saveDay(selectedDayId, day); }
+
+// Added these two functions to handle updating stats directly during a workout session 
+function updateActiveSetWeight(val) {
+  var s = awFlatSets[awCurrentIndex];
+  s.weight = parseFloat(val) || 0;
+  var day = workoutDays[awDayId];
+  if (day && day.exercises[s.exId]) {
+    day.exercises[s.exId].sets[s.setIdx].weight = s.weight;
+    saveDay(awDayId, day);
+  }
+}
+function updateActiveSetSpeed(val) {
+  var s = awFlatSets[awCurrentIndex];
+  s.speed = parseFloat(val) || 0;
+  var day = workoutDays[awDayId];
+  if (day && day.exercises[s.exId]) {
+    day.exercises[s.exId].sets[s.setIdx].speed = s.speed;
+    saveDay(awDayId, day);
+  }
+}
+
 function addSetToExercise(exId) { var day = workoutDays[selectedDayId]; var sets = day.exercises[exId].sets; var last = sets[sets.length-1]||{}; sets.push(Object.assign({},last,{completed:false})); saveDay(selectedDayId, day); }
 function removeSetFromExercise(exId) { var day = workoutDays[selectedDayId]; if (day.exercises[exId].sets.length > 1) { day.exercises[exId].sets.pop(); saveDay(selectedDayId, day); } }
 
@@ -747,6 +796,8 @@ function startWorkout() {
   document.getElementById('active-workout').classList.add('active');
   renderActiveSet();
 }
+
+// Updated render function to support inline editing
 function renderActiveSet() {
   if (awCurrentIndex >= awFlatSets.length) { finishWorkout(); return; }
   var s = awFlatSets[awCurrentIndex]; var total = awFlatSets.length;
@@ -755,11 +806,13 @@ function renderActiveSet() {
   document.getElementById('aw-progress-text').textContent = awCurrentIndex + ' of ' + total + ' sets completed';
   document.getElementById('aw-ex-name').textContent = s.exName;
   document.getElementById('aw-set-info').textContent = 'Set ' + s.setNum + ' of ' + s.totalSets;
+  
   if (s.exType === 'weights') {
-    document.getElementById('aw-set-detail').innerHTML = s.reps + ' <small>reps</small> &times; ' + s.weight + ' <small>kg</small>';
+    document.getElementById('aw-set-detail').innerHTML = s.reps + ' <small>reps</small> &times; <input type="number" inputmode="decimal" class="aw-inline-input" value="' + s.weight + '" onchange="updateActiveSetWeight(this.value)"> <small>kg</small>';
   } else {
-    document.getElementById('aw-set-detail').innerHTML = s.duration + ' <small>min</small> &middot; ' + s.speed + ' <small>km/h</small>' + (s.incline ? ' &middot; ' + s.incline + '<small>% incline</small>' : '');
+    document.getElementById('aw-set-detail').innerHTML = s.duration + ' <small>min</small> &middot; <input type="number" inputmode="decimal" class="aw-inline-input" value="' + s.speed + '" onchange="updateActiveSetSpeed(this.value)"> <small>km/h</small>' + (s.incline ? ' &middot; ' + s.incline + '<small>%</small>' : '');
   }
+  
   var restTime = s.rest || 0;
   document.getElementById('aw-rest-preview').textContent = restTime > 0 ? restTime + 's rest after this set' : 'No rest after this set';
   document.getElementById('aw-exercise-view').style.display = '';
@@ -769,6 +822,7 @@ function renderActiveSet() {
 }
 
 function setDone() {
+  initAudio(); // Required to unlock sound on mobile devices
   var btn = document.getElementById('set-done-btn');
   if (btn.classList.contains('resting')) { skipRest(); return; }
   if (awCurrentIndex >= awFlatSets.length) return;
@@ -797,7 +851,7 @@ function startRestTimer(seconds) {
     restTimeRemaining--;
     document.getElementById('timer-value').textContent = restTimeRemaining;
     document.getElementById('set-done-btn').textContent = 'SKIP REST (' + restTimeRemaining + 's)';
-    if (restTimeRemaining <= 0) { clearInterval(restTimerInterval); renderActiveSet(); }
+    if (restTimeRemaining <= 0) { playBeep(); clearInterval(restTimerInterval); renderActiveSet(); }
   }, 1000);
 }
 function skipRest() { clearInterval(restTimerInterval); renderActiveSet(); }
@@ -827,7 +881,7 @@ function dismissComplete() {
   }
 }
 function exitWorkout() {
-  showConfirm('End Workout', 'Are you sure you want to end this workout? Progress will be saved.', function(){ clearInterval(restTimerInterval); document.getElementById('active-workout').classList.remove('active'); awDayId = null; });
+  showConfirm('End Workout', 'Are you sure you want to end this workout? Progress will be saved.', function(){ clearInterval(restTimerInterval); document.getElementById('active-workout').classList.remove('active'); awDayId = null; }, 'End Workout');
 }
 
 function renderCalendar() {
@@ -869,14 +923,21 @@ function showCalDetail(dateStr) {
 }
 function confirmDeleteHistory(historyKey, dateStr) {
   var entry = workoutHistory[historyKey]; var name = entry ? entry.dayName : 'this workout';
-  showConfirm('Delete Workout Log', 'Remove "'+name+'" from your history?', function(){ deleteHistoryEntry(historyKey).then(function(){ showCalDetail(dateStr); }); });
+  showConfirm('Delete Workout Log', 'Remove "'+name+'" from your history?', function(){ deleteHistoryEntry(historyKey).then(function(){ showCalDetail(dateStr); }); }, 'Delete');
 }
 
-function showConfirm(title, message, callback) {
+// Updated the showConfirm logic to safely handle callbacks and dynamically change button text
+function showConfirm(title, message, callback, btnText) {
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-message').textContent = message;
   confirmCallback = callback;
-  document.getElementById('confirm-action-btn').onclick = function(){ closeConfirm(); if (confirmCallback) confirmCallback(); };
+  var actionBtn = document.getElementById('confirm-action-btn');
+  actionBtn.textContent = btnText || 'Confirm';
+  actionBtn.onclick = function() { 
+    var cb = confirmCallback; 
+    closeConfirm(); 
+    if (cb) cb(); 
+  };
   document.getElementById('confirm-dialog').classList.add('active');
 }
 function closeConfirm() { document.getElementById('confirm-dialog').classList.remove('active'); confirmCallback = null; }
@@ -884,7 +945,6 @@ function esc(s) { var d = document.createElement('div'); d.textContent = s; retu
 
 document.getElementById('day-name-input').addEventListener('keydown', function(e){ if (e.key==='Enter') saveDayName(); });
 document.getElementById('ex-name').addEventListener('keydown', function(e){ if (e.key==='Enter') e.target.blur(); });
-// Only confirm dialog closes on overlay tap. Exercise and day-name modals do NOT.
 document.getElementById('confirm-dialog').addEventListener('click', function(e){ if (e.target===e.currentTarget) closeConfirm(); });
 calendarDate = new Date();
 </script>
