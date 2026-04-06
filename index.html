@@ -473,7 +473,7 @@ body { display: flex; flex-direction: column; }
   </div>
 </div>
 
-<div class="modal-overlay" id="optional-modal">
+<div class="modal-overlay" id="optional-modal" style="z-index: 350;">
   <div class="modal" onclick="event.stopPropagation()">
     <h2>Optional Exercises</h2>
     <p style="color:var(--text-secondary); margin-bottom:16px; font-size:14px;">Select an exercise to add to your current session:</p>
@@ -655,7 +655,7 @@ function switchTab(tab) {
   } else { 
       document.getElementById('tab-calendar').classList.add('active'); 
       document.getElementById('header-title').textContent = 'Calendar'; 
-      calendarDate = new Date(); // Reset to current month on tab switch
+      calendarDate = new Date(); 
   }
   document.getElementById('back-btn').style.display = 'none';
   renderCurrentView();
@@ -916,7 +916,21 @@ function startWorkout() {
   document.getElementById('aw-set-detail').style.color = dColor;
   
   document.getElementById('active-workout').classList.add('active');
-  renderActiveSet();
+  
+  // Handle edge case where workout contains ONLY optional exercises
+  if (awFlatSets.length === 0 && awAvailableOptionals.length > 0) {
+      document.getElementById('aw-progress-text').textContent = "Select an optional exercise to start";
+      document.getElementById('aw-exercise-name').textContent = "";
+      document.getElementById('aw-set-info').textContent = "";
+      document.getElementById('aw-set-detail').innerHTML = "";
+      document.getElementById('aw-rest-preview').textContent = "";
+      document.getElementById('set-done-btn').style.display = 'none';
+      document.getElementById('aw-add-optional-btn').style.display = 'block';
+      showOptionalList();
+  } else {
+      document.getElementById('set-done-btn').style.display = 'block';
+      renderActiveSet();
+  }
 }
 
 function renderActiveSet() {
@@ -942,7 +956,6 @@ function renderActiveSet() {
   document.getElementById('aw-exercise-view').style.display = '';
   document.getElementById('rest-timer').classList.remove('active');
   
-  // Manage optional button visibility
   document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
   
   var doneBtn = document.getElementById('set-done-btn');
@@ -1009,12 +1022,27 @@ function showOptionalList() {
 function addOptionalToWorkout(exId) {
     var day = workoutDays[awDayId];
     var ex = day.exercises[exId];
+    
+    // Add the sets to our flat array
     (ex.sets || []).forEach(function(set, setIdx) {
         awFlatSets.push(Object.assign({exId:exId, exName:ex.name, exType:ex.type, setIdx:setIdx, setNum:setIdx+1, totalSets:(ex.sets||[]).length}, set));
     });
+    
+    // Remove from available options
     awAvailableOptionals = awAvailableOptionals.filter(id => id !== exId);
     closeOptionalModal();
-    renderActiveSet();
+    
+    // Check if we are currently resting so we don't accidentally cancel the user's timer!
+    if (document.getElementById('rest-timer').classList.contains('active')) {
+        var total = awFlatSets.length;
+        var pct = (awCurrentIndex / total) * 100;
+        document.getElementById('aw-progress-fill').style.width = pct + '%';
+        document.getElementById('aw-progress-text').textContent = awCurrentIndex + ' of ' + total + ' sets completed';
+        document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
+    } else {
+        document.getElementById('set-done-btn').style.display = 'block';
+        renderActiveSet();
+    }
 }
 function closeOptionalModal() {
     document.getElementById('optional-modal').classList.remove('active');
@@ -1025,7 +1053,7 @@ function finishWorkout() {
   document.getElementById('active-workout').classList.remove('active');
   var day = workoutDays[awDayId]; var now = new Date();
   
-  if (awCurrentIndex > 0) { // Only save if they actually completed at least 1 set
+  if (awCurrentIndex > 0) { 
       saveHistoryEntry({ date: now.toISOString().split('T')[0], dayId: awDayId, dayName: day.name, dayColor: day.color || '#D95525', completedAt: now.getTime() });
   }
   
@@ -1078,7 +1106,6 @@ function renderCalendar() {
   var firstDay = new Date(year, month, 1); var lastDay = new Date(year, month + 1, 0);
   var startDow = firstDay.getDay(); if (startDow === 0) startDow = 7; startDow--;
   
-  // Disable future months
   var isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
   var nextBtn = document.getElementById('cal-nav-next');
   if (isCurrentMonth) {
@@ -1122,7 +1149,6 @@ function renderCalendar() {
 
 function changeMonth(delta) { 
     var today = new Date();
-    // Block navigating beyond current month
     if (delta > 0 && calendarDate.getFullYear() >= today.getFullYear() && calendarDate.getMonth() >= today.getMonth()) {
         return; 
     }
