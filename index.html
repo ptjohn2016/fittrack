@@ -232,7 +232,7 @@ body { display: flex; flex-direction: column; }
   justify-content: center; padding: 24px; text-align: center; gap: 16px;
 }
 
-/* New Active Workout Action Buttons (Skip / Do Later) */
+/* Active Workout Action Buttons */
 .aw-action-btns {
   display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; width: 100%;
 }
@@ -510,10 +510,10 @@ body { display: flex; flex-direction: column; }
   <div class="aw-content" id="aw-content">
     
     <div class="aw-action-btns" id="aw-action-btns" style="display:none;">
-      <button class="aw-action-btn" id="btn-do-later" onclick="postponeCurrentExercise()">
+      <button class="aw-action-btn" id="btn-do-later" onclick="postponeCurrentExerciseConfirm()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Do Later
       </button>
-      <button class="aw-action-btn" onclick="skipCurrentExercise()">
+      <button class="aw-action-btn" onclick="skipCurrentExerciseConfirm()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/><polyline points="14 18 20 12 14 6"/></svg> Skip
       </button>
     </div>
@@ -607,9 +607,20 @@ let audioCtx;
 let selectedDayColor = "#D95525";
 let awAvailableOptionals = [];
 
+// Advanced audio initialization to bypass strict iOS muting
 function initAudio() {
-  if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-  if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+  if (!audioCtx) { 
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
+  }
+  if (audioCtx.state === 'suspended') { 
+      audioCtx.resume(); 
+  }
+  // Create and play a silent buffer snippet to forcefully unlock Web Audio API on iOS
+  var buffer = audioCtx.createBuffer(1, 1, 22050);
+  var source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.start(0);
 }
 
 function playBeep() {
@@ -920,6 +931,8 @@ function addSetToExercise(exId) { var day = workoutDays[selectedDayId]; var sets
 function removeSetFromExercise(exId) { var day = workoutDays[selectedDayId]; if (day.exercises[exId].sets.length > 1) { day.exercises[exId].sets.pop(); saveDay(selectedDayId, day); } }
 
 function startWorkout() {
+  initAudio(); // Forcibly initialize the audio context upon user's first tap
+  
   var day = workoutDays[selectedDayId];
   if (!day || !day.exercises) return;
   awDayId = selectedDayId; awFlatSets = []; awCurrentIndex = 0; awAvailableOptionals = [];
@@ -946,7 +959,6 @@ function startWorkout() {
   
   document.getElementById('active-workout').classList.add('active');
   
-  // Handle edge case where workout contains ONLY optional exercises
   if (awFlatSets.length === 0 && awAvailableOptionals.length > 0) {
       document.getElementById('aw-progress-text').textContent = "Select an optional exercise to start";
       document.getElementById('aw-exercise-name').textContent = "";
@@ -963,7 +975,6 @@ function startWorkout() {
   }
 }
 
-// Manages visibility of Skip / Do Later buttons based on queue
 function updateAwActions() {
     var actionsContainer = document.getElementById('aw-action-btns');
     if (awCurrentIndex >= awFlatSets.length) {
@@ -976,21 +987,23 @@ function updateAwActions() {
     for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
         if (awFlatSets[i].exId !== currentExId) { hasOther = true; break; }
     }
-    // Only show "Do Later" if there's actually something to postpone past
     document.getElementById('btn-do-later').style.display = hasOther ? 'flex' : 'none';
+}
+
+function skipCurrentExerciseConfirm() {
+    showConfirm('Skip Exercise', 'Are you sure you want to skip this exercise?', skipCurrentExercise, 'Skip');
+}
+function postponeCurrentExerciseConfirm() {
+    showConfirm('Do Later', 'Are you sure you want to do this exercise later?', postponeCurrentExercise, 'Do Later');
 }
 
 function skipCurrentExercise() {
     if (awCurrentIndex >= awFlatSets.length) return;
     var currentExId = awFlatSets[awCurrentIndex].exId;
     var remainingSets = [];
-    
-    // Grab all sets from here to the end that belong to DIFFERENT exercises
     for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
         if (awFlatSets[i].exId !== currentExId) { remainingSets.push(awFlatSets[i]); }
     }
-    
-    // Replace array from cursor onwards with the pruned array
     awFlatSets.splice.apply(awFlatSets, [awCurrentIndex, awFlatSets.length - awCurrentIndex].concat(remainingSets));
     
     if (document.getElementById('rest-timer').classList.contains('active')) {
@@ -1006,15 +1019,12 @@ function postponeCurrentExercise() {
     var setsToMove = [];
     var otherSets = [];
     
-    // Split sets into "this exercise" and "everything else"
     for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
         if (awFlatSets[i].exId === currentExId) { setsToMove.push(awFlatSets[i]); } 
         else { otherSets.push(awFlatSets[i]); }
     }
+    if (otherSets.length === 0) return; 
     
-    if (otherSets.length === 0) return; // Already at the end
-    
-    // Rebuild the queue: put other sets first, then drop postponed sets at the end
     awFlatSets.splice.apply(awFlatSets, [awCurrentIndex, awFlatSets.length - awCurrentIndex].concat(otherSets).concat(setsToMove));
     
     if (document.getElementById('rest-timer').classList.contains('active')) {
@@ -1052,7 +1062,8 @@ function renderActiveSet() {
   document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
   
   var doneBtn = document.getElementById('set-done-btn');
-  doneBtn.textContent = 'SET DONE';
+  // Add sets count to the Done Button UI
+  doneBtn.textContent = 'SET DONE (' + s.setNum + '/' + s.totalSets + ')';
   doneBtn.classList.remove('resting');
   doneBtn.style.backgroundColor = dColor;
 }
@@ -1082,13 +1093,13 @@ function startRestTimer(seconds) {
   document.getElementById('rest-timer').classList.add('active');
   document.getElementById('timer-value').textContent = seconds;
   
-  // Show preview of upcoming exercise during rest
   var upcomingExName = awFlatSets[awCurrentIndex] ? awFlatSets[awCurrentIndex].exName : '';
   document.getElementById('up-next-info').textContent = upcomingExName ? 'Up Next: ' + upcomingExName : '';
   updateAwActions();
   
   var doneBtn = document.getElementById('set-done-btn');
-  doneBtn.textContent = 'SKIP REST (' + seconds + 's)';
+  // Removed "s" from UI here
+  doneBtn.textContent = 'SKIP REST (' + seconds + ')';
   doneBtn.classList.add('resting');
   doneBtn.style.backgroundColor = 'var(--teal)'; 
   
@@ -1096,13 +1107,12 @@ function startRestTimer(seconds) {
   restTimerInterval = setInterval(function() {
     restTimeRemaining--;
     document.getElementById('timer-value').textContent = restTimeRemaining;
-    document.getElementById('set-done-btn').textContent = 'SKIP REST (' + restTimeRemaining + 's)';
+    document.getElementById('set-done-btn').textContent = 'SKIP REST (' + restTimeRemaining + ')';
     if (restTimeRemaining <= 0) { playBeep(); clearInterval(restTimerInterval); renderActiveSet(); }
   }, 1000);
 }
 function skipRest() { clearInterval(restTimerInterval); renderActiveSet(); }
 
-// Optional Exercise Injection during workout
 function showOptionalList() {
     var container = document.getElementById('optional-list-container');
     var day = workoutDays[awDayId];
@@ -1126,7 +1136,6 @@ function addOptionalToWorkout(exId) {
         setsToAdd.push(Object.assign({exId:exId, exName:ex.name, exType:ex.type, setIdx:setIdx, setNum:setIdx+1, totalSets:(ex.sets||[]).length}, set));
     });
     
-    // Find the end of the CURRENT exercise block to dynamically insert these sets
     var insertIndex = awFlatSets.length;
     if (awCurrentIndex < awFlatSets.length) {
         var currentExId = awFlatSets[awCurrentIndex].exId;
@@ -1138,14 +1147,11 @@ function addOptionalToWorkout(exId) {
         }
     }
     
-    // Splice new sets into the queue exactly after the current exercise ends
     awFlatSets.splice.apply(awFlatSets, [insertIndex, 0].concat(setsToAdd));
     
-    // Remove from available options
     awAvailableOptionals = awAvailableOptionals.filter(id => id !== exId);
     closeOptionalModal();
     
-    // Update active UI based on whether we are resting or not
     if (document.getElementById('rest-timer').classList.contains('active')) {
         var total = awFlatSets.length;
         var pct = (awCurrentIndex / total) * 100;
