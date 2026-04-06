@@ -226,10 +226,24 @@ body { display: flex; flex-direction: column; }
 .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width .4s ease; }
 .progress-text { font-size: 12px; color: var(--text-muted); margin-top: 6px; text-align: center; }
+
 .aw-content {
   flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: center; padding: 24px; text-align: center; gap: 16px;
 }
+
+/* New Active Workout Action Buttons (Skip / Do Later) */
+.aw-action-btns {
+  display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; width: 100%;
+}
+.aw-action-btn {
+  padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  background: var(--bg); border: 2px solid var(--border); color: var(--text-secondary); 
+  cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.15s;
+}
+.aw-action-btn:active { transform: scale(0.95); }
+.aw-action-btn svg { width: 14px; height: 14px; }
+
 .aw-exercise-name { font-size: 24px; font-weight: 700; }
 .aw-set-info { font-size: 16px; color: var(--text-secondary); }
 .aw-set-detail { font-size: 40px; font-weight: 800; color: var(--primary); line-height: 1.1; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
@@ -254,6 +268,7 @@ body { display: flex; flex-direction: column; }
 }
 .set-done-btn:active { transform: scale(0.97); }
 .set-done-btn.resting { background: var(--teal); }
+
 .rest-timer { display: none; flex-direction: column; align-items: center; gap: 12px; }
 .rest-timer.active { display: flex; }
 .rest-timer .timer-circle {
@@ -265,7 +280,7 @@ body { display: flex; flex-direction: column; }
 .skip-btn {
   padding: 10px 28px; border-radius: 10px; border: 2px solid var(--border);
   background: none; font-family: inherit; font-size: 14px; font-weight: 600;
-  color: var(--text-secondary); cursor: pointer;
+  color: var(--text-secondary); cursor: pointer; margin-top: 8px;
 }
 .calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .calendar-header h3 { font-size: 18px; font-weight: 700; margin-bottom: 4px;}
@@ -491,21 +506,35 @@ body { display: flex; flex-direction: column; }
     <div class="progress-bar"><div class="progress-fill" id="aw-progress-fill"></div></div>
     <div class="progress-text" id="aw-progress-text"></div>
   </div>
+  
   <div class="aw-content" id="aw-content">
+    
+    <div class="aw-action-btns" id="aw-action-btns" style="display:none;">
+      <button class="aw-action-btn" id="btn-do-later" onclick="postponeCurrentExercise()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Do Later
+      </button>
+      <button class="aw-action-btn" onclick="skipCurrentExercise()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/><polyline points="14 18 20 12 14 6"/></svg> Skip
+      </button>
+    </div>
+
     <div id="aw-exercise-view">
       <div class="aw-exercise-name" id="aw-ex-name"></div>
       <div class="aw-set-info" id="aw-set-info"></div>
       <div class="aw-set-detail" id="aw-set-detail"></div>
       <div class="aw-rest-preview" id="aw-rest-preview"></div>
     </div>
+
     <div class="rest-timer" id="rest-timer">
       <div class="timer-label">Rest</div>
       <div class="timer-circle">
         <div class="timer-value" id="timer-value">60</div>
       </div>
+      <div id="up-next-info" style="font-size:16px; font-weight:600; color:var(--text); margin-top:12px;"></div>
       <button class="skip-btn" onclick="skipRest()">Skip Rest &#8594;</button>
     </div>
   </div>
+  
   <div class="aw-footer">
     <button class="btn-secondary" id="aw-add-optional-btn" onclick="showOptionalList()" style="display:none; margin-bottom:12px; border-style:dashed;">+ Add Optional Exercise</button>
     <button class="set-done-btn" id="set-done-btn" onclick="setDone()">SET DONE</button>
@@ -925,6 +954,7 @@ function startWorkout() {
       document.getElementById('aw-set-detail').innerHTML = "";
       document.getElementById('aw-rest-preview').textContent = "";
       document.getElementById('set-done-btn').style.display = 'none';
+      document.getElementById('aw-action-btns').style.display = 'none';
       document.getElementById('aw-add-optional-btn').style.display = 'block';
       showOptionalList();
   } else {
@@ -933,12 +963,75 @@ function startWorkout() {
   }
 }
 
+// Manages visibility of Skip / Do Later buttons based on queue
+function updateAwActions() {
+    var actionsContainer = document.getElementById('aw-action-btns');
+    if (awCurrentIndex >= awFlatSets.length) {
+        actionsContainer.style.display = 'none';
+        return;
+    }
+    actionsContainer.style.display = 'flex';
+    var currentExId = awFlatSets[awCurrentIndex].exId;
+    var hasOther = false;
+    for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
+        if (awFlatSets[i].exId !== currentExId) { hasOther = true; break; }
+    }
+    // Only show "Do Later" if there's actually something to postpone past
+    document.getElementById('btn-do-later').style.display = hasOther ? 'flex' : 'none';
+}
+
+function skipCurrentExercise() {
+    if (awCurrentIndex >= awFlatSets.length) return;
+    var currentExId = awFlatSets[awCurrentIndex].exId;
+    var remainingSets = [];
+    
+    // Grab all sets from here to the end that belong to DIFFERENT exercises
+    for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
+        if (awFlatSets[i].exId !== currentExId) { remainingSets.push(awFlatSets[i]); }
+    }
+    
+    // Replace array from cursor onwards with the pruned array
+    awFlatSets.splice.apply(awFlatSets, [awCurrentIndex, awFlatSets.length - awCurrentIndex].concat(remainingSets));
+    
+    if (document.getElementById('rest-timer').classList.contains('active')) {
+        skipRest();
+    } else {
+        renderActiveSet();
+    }
+}
+
+function postponeCurrentExercise() {
+    if (awCurrentIndex >= awFlatSets.length) return;
+    var currentExId = awFlatSets[awCurrentIndex].exId;
+    var setsToMove = [];
+    var otherSets = [];
+    
+    // Split sets into "this exercise" and "everything else"
+    for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
+        if (awFlatSets[i].exId === currentExId) { setsToMove.push(awFlatSets[i]); } 
+        else { otherSets.push(awFlatSets[i]); }
+    }
+    
+    if (otherSets.length === 0) return; // Already at the end
+    
+    // Rebuild the queue: put other sets first, then drop postponed sets at the end
+    awFlatSets.splice.apply(awFlatSets, [awCurrentIndex, awFlatSets.length - awCurrentIndex].concat(otherSets).concat(setsToMove));
+    
+    if (document.getElementById('rest-timer').classList.contains('active')) {
+        skipRest();
+    } else {
+        renderActiveSet();
+    }
+}
+
 function renderActiveSet() {
   if (awCurrentIndex >= awFlatSets.length) { finishWorkout(); return; }
   var s = awFlatSets[awCurrentIndex]; var total = awFlatSets.length;
   var pct = (awCurrentIndex / total) * 100;
   var day = workoutDays[awDayId];
   var dColor = day ? (day.color || 'var(--primary)') : 'var(--primary)';
+  
+  updateAwActions();
   
   document.getElementById('aw-progress-fill').style.width = pct + '%';
   document.getElementById('aw-progress-text').textContent = awCurrentIndex + ' of ' + total + ' sets completed';
@@ -989,6 +1082,11 @@ function startRestTimer(seconds) {
   document.getElementById('rest-timer').classList.add('active');
   document.getElementById('timer-value').textContent = seconds;
   
+  // Show preview of upcoming exercise during rest
+  var upcomingExName = awFlatSets[awCurrentIndex] ? awFlatSets[awCurrentIndex].exName : '';
+  document.getElementById('up-next-info').textContent = upcomingExName ? 'Up Next: ' + upcomingExName : '';
+  updateAwActions();
+  
   var doneBtn = document.getElementById('set-done-btn');
   doneBtn.textContent = 'SKIP REST (' + seconds + 's)';
   doneBtn.classList.add('resting');
@@ -1023,22 +1121,41 @@ function addOptionalToWorkout(exId) {
     var day = workoutDays[awDayId];
     var ex = day.exercises[exId];
     
-    // Add the sets to our flat array
+    var setsToAdd = [];
     (ex.sets || []).forEach(function(set, setIdx) {
-        awFlatSets.push(Object.assign({exId:exId, exName:ex.name, exType:ex.type, setIdx:setIdx, setNum:setIdx+1, totalSets:(ex.sets||[]).length}, set));
+        setsToAdd.push(Object.assign({exId:exId, exName:ex.name, exType:ex.type, setIdx:setIdx, setNum:setIdx+1, totalSets:(ex.sets||[]).length}, set));
     });
+    
+    // Find the end of the CURRENT exercise block to dynamically insert these sets
+    var insertIndex = awFlatSets.length;
+    if (awCurrentIndex < awFlatSets.length) {
+        var currentExId = awFlatSets[awCurrentIndex].exId;
+        for (var i = awCurrentIndex; i < awFlatSets.length; i++) {
+            if (awFlatSets[i].exId !== currentExId) {
+                insertIndex = i;
+                break;
+            }
+        }
+    }
+    
+    // Splice new sets into the queue exactly after the current exercise ends
+    awFlatSets.splice.apply(awFlatSets, [insertIndex, 0].concat(setsToAdd));
     
     // Remove from available options
     awAvailableOptionals = awAvailableOptionals.filter(id => id !== exId);
     closeOptionalModal();
     
-    // Check if we are currently resting so we don't accidentally cancel the user's timer!
+    // Update active UI based on whether we are resting or not
     if (document.getElementById('rest-timer').classList.contains('active')) {
         var total = awFlatSets.length;
         var pct = (awCurrentIndex / total) * 100;
         document.getElementById('aw-progress-fill').style.width = pct + '%';
         document.getElementById('aw-progress-text').textContent = awCurrentIndex + ' of ' + total + ' sets completed';
         document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
+        
+        var upcomingExName = awFlatSets[awCurrentIndex] ? awFlatSets[awCurrentIndex].exName : '';
+        document.getElementById('up-next-info').textContent = upcomingExName ? 'Up Next: ' + upcomingExName : '';
+        updateAwActions();
     } else {
         document.getElementById('set-done-btn').style.display = 'block';
         renderActiveSet();
