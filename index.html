@@ -624,27 +624,16 @@ let restTimeRemaining = 0;
 let audioCtx;
 let selectedDayColor = "#D95525";
 let awAvailableOptionals = [];
-let workoutStartTime = null; // Used to track duration
+let workoutStartTime = null; 
 
-// Initialize Audio Context (must be called directly inside a click event to unlock on iOS)
 function initAudio() {
-  if (!audioCtx) { 
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
-  }
-  if (audioCtx.state === 'suspended') { 
-      audioCtx.resume(); 
-  }
-  // Play a silent 0-second buffer to forcibly unlock the audio API for the session
-  var buffer = audioCtx.createBuffer(1, 1, 22050);
-  var source = audioCtx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(audioCtx.destination);
-  source.start(0);
+  if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  if (audioCtx.state === 'suspended') { audioCtx.resume(); }
 }
 
 function playBeep() {
   try {
-    if (!audioCtx) return;
+    if (!audioCtx) initAudio();
     var osc = audioCtx.createOscillator();
     var gainNode = audioCtx.createGain();
     osc.type = 'sine';
@@ -971,14 +960,11 @@ function startWorkout() {
   var dColor = day.color || 'var(--primary)';
   document.getElementById('aw-title').textContent = day.name;
   
-  // Customise active workflow colours
   document.getElementById('aw-progress-fill').style.backgroundColor = dColor;
   document.getElementById('aw-set-detail').style.color = dColor;
   
-  // Bring up the Active Workout wrapper
   document.getElementById('active-workout').classList.add('active');
   
-  // Show Start Screen, hide standard content
   document.getElementById('aw-start-screen').style.display = 'flex';
   document.getElementById('aw-start-title').textContent = day.name;
   document.getElementById('aw-content').style.display = 'none';
@@ -991,10 +977,7 @@ function startWorkout() {
   startBtn.style.background = 'var(--success)';
 }
 
-// Begins the 3 second countdown when you hit the massive green button
 function beginWorkoutCountdown() {
-    initAudio(); // Crucial: This explicitly unlocks iOS audio via touch event
-    
     var btn = document.getElementById('aw-big-start-btn');
     btn.style.pointerEvents = 'none';
     var count = 3;
@@ -1008,16 +991,14 @@ function beginWorkoutCountdown() {
             playBeep();
         } else {
             clearInterval(cd);
-            playBeep(); // Final lower pitch or just generic beep
+            playBeep(); 
             workoutStartTime = Date.now();
             
-            // Switch from start screen back to standard workout layout
             document.getElementById('aw-start-screen').style.display = 'none';
             document.getElementById('aw-progress').style.display = 'block';
             document.getElementById('aw-content').style.display = 'flex';
             document.getElementById('aw-footer').style.display = 'block';
             
-            // Edge case: empty workout (only optionals)
             if (awFlatSets.length === 0 && awAvailableOptionals.length > 0) {
                 document.getElementById('aw-progress-text').textContent = "Select an optional exercise to start";
                 document.getElementById('aw-exercise-name').textContent = "";
@@ -1152,7 +1133,6 @@ function startRestTimer(seconds) {
   document.getElementById('rest-timer').classList.add('active');
   document.getElementById('timer-value').textContent = seconds;
   
-  // Up Next Logic - ONLY display if the next set is Set #1 of a new exercise
   var upcomingSet = awFlatSets[awCurrentIndex];
   var upNextElem = document.getElementById('up-next-info');
   if (upcomingSet && upcomingSet.setNum === 1) {
@@ -1224,7 +1204,6 @@ function addOptionalToWorkout(exId) {
         document.getElementById('aw-progress-text').textContent = awCurrentIndex + ' of ' + total + ' sets completed';
         document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
         
-        // Refresh "up next" if the injected exercise is literally next
         var upcomingSet = awFlatSets[awCurrentIndex];
         var upNextElem = document.getElementById('up-next-info');
         if (upcomingSet && upcomingSet.setNum === 1) {
@@ -1283,7 +1262,7 @@ function completeWorkout() {
       dayName: day.name, 
       dayColor: day.color || '#D95525', 
       completedAt: now.getTime(),
-      duration: 0 // Duration bypassed
+      duration: 0 
   });
   
   document.getElementById('complete-summary').textContent = day.name + ' \u2014 Workout logged!';
@@ -1364,7 +1343,6 @@ function renderCalendar() {
   for (var i = 1; i <= remaining; i++) html += '<div class="cal-day other-month">'+i+'</div>';
   document.getElementById('cal-grid').innerHTML = html;
   
-  // Auto Select Date Logic
   var dateToSelect = isCurrentMonth 
     ? year+'-'+String(month+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0') 
     : year+'-'+String(month+1).padStart(2,'0')+'-01';
@@ -1386,7 +1364,6 @@ function goToToday() {
 }
 
 function showCalDetail(dateStr) {
-  // Highlight visually
   document.querySelectorAll('.cal-day').forEach(el => el.classList.remove('selected'));
   var targetEl = document.querySelector('.cal-day[data-date="'+dateStr+'"]');
   if (targetEl) targetEl.classList.add('selected');
