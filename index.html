@@ -232,10 +232,21 @@ body { display: flex; flex-direction: column; }
   justify-content: center; padding: 24px; text-align: center; gap: 16px;
 }
 
-/* Active Workout Action Buttons */
-.aw-action-btns {
-  display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; width: 100%;
+/* Start Screen specific */
+#aw-start-screen {
+  flex: 1; display: none; flex-direction: column; align-items: center; 
+  justify-content: center; padding: 24px; text-align: center;
 }
+.start-big-btn {
+  width: 160px; height: 160px; border-radius: 50%; background: var(--success); 
+  color: white; border: none; font-size: 32px; font-weight: 800; font-family: inherit; 
+  box-shadow: 0 8px 32px rgba(45,159,92,0.4); cursor: pointer; transition: transform 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.start-big-btn:active { transform: scale(0.95); }
+
+/* Active Workout Action Buttons */
+.aw-action-btns { display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; width: 100%; }
 .aw-action-btn {
   padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
   background: var(--bg); border: 2px solid var(--border); color: var(--text-secondary); 
@@ -303,7 +314,8 @@ body { display: flex; flex-direction: column; }
   font-weight: 500; position: relative; cursor: pointer; min-height: 44px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
-.cal-day.today { font-weight: 700; border: 2px solid var(--primary); border-radius: 10px; }
+.cal-day.today { font-weight: 700; color: var(--primary); }
+.cal-day.selected { border: 2px solid var(--primary); border-radius: 10px; background: var(--primary-light); color: var(--primary); font-weight: 700; }
 .cal-day.other-month { color: var(--text-muted); opacity: 0.4; }
 .cal-day:active { background: var(--bg); }
 
@@ -502,13 +514,19 @@ body { display: flex; flex-direction: column; }
     <span class="aw-title" id="aw-title"></span>
     <button class="aw-close" onclick="exitWorkout()">End</button>
   </div>
-  <div class="aw-progress">
+  
+  <div class="aw-progress" id="aw-progress">
     <div class="progress-bar"><div class="progress-fill" id="aw-progress-fill"></div></div>
     <div class="progress-text" id="aw-progress-text"></div>
   </div>
   
-  <div class="aw-content" id="aw-content">
-    
+  <div id="aw-start-screen">
+    <h2 id="aw-start-title" style="font-size:32px; font-weight:800; margin-bottom:12px; color:var(--text);"></h2>
+    <p style="font-size:16px; color:var(--text-secondary); margin-bottom:48px;">Ready to crush it?</p>
+    <button id="aw-big-start-btn" class="start-big-btn" onclick="beginWorkoutCountdown()">START</button>
+  </div>
+  
+  <div class="aw-content" id="aw-content" style="display:none;">
     <div class="aw-action-btns" id="aw-action-btns" style="display:none;">
       <button class="aw-action-btn" id="btn-do-later" onclick="postponeCurrentExerciseConfirm()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Do Later
@@ -530,12 +548,12 @@ body { display: flex; flex-direction: column; }
       <div class="timer-circle">
         <div class="timer-value" id="timer-value">60</div>
       </div>
-      <div id="up-next-info" style="font-size:16px; font-weight:600; color:var(--text); margin-top:12px;"></div>
+      <div id="up-next-info" style="margin-top:20px; text-align:center;"></div>
       <button class="skip-btn" onclick="skipRest()">Skip Rest &#8594;</button>
     </div>
   </div>
   
-  <div class="aw-footer">
+  <div class="aw-footer" id="aw-footer" style="display:none;">
     <button class="btn-secondary" id="aw-add-optional-btn" onclick="showOptionalList()" style="display:none; margin-bottom:12px; border-style:dashed;">+ Add Optional Exercise</button>
     <button class="set-done-btn" id="set-done-btn" onclick="setDone()">SET DONE</button>
   </div>
@@ -606,8 +624,9 @@ let restTimeRemaining = 0;
 let audioCtx;
 let selectedDayColor = "#D95525";
 let awAvailableOptionals = [];
+let workoutStartTime = null; // Used to track duration
 
-// Advanced audio initialization to bypass strict iOS muting
+// Initialize Audio Context (must be called directly inside a click event to unlock on iOS)
 function initAudio() {
   if (!audioCtx) { 
       audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
@@ -615,7 +634,7 @@ function initAudio() {
   if (audioCtx.state === 'suspended') { 
       audioCtx.resume(); 
   }
-  // Create and play a silent buffer snippet to forcefully unlock Web Audio API on iOS
+  // Play a silent 0-second buffer to forcibly unlock the audio API for the session
   var buffer = audioCtx.createBuffer(1, 1, 22050);
   var source = audioCtx.createBufferSource();
   source.buffer = buffer;
@@ -625,7 +644,7 @@ function initAudio() {
 
 function playBeep() {
   try {
-    if (!audioCtx) initAudio();
+    if (!audioCtx) return;
     var osc = audioCtx.createOscillator();
     var gainNode = audioCtx.createGain();
     osc.type = 'sine';
@@ -931,8 +950,6 @@ function addSetToExercise(exId) { var day = workoutDays[selectedDayId]; var sets
 function removeSetFromExercise(exId) { var day = workoutDays[selectedDayId]; if (day.exercises[exId].sets.length > 1) { day.exercises[exId].sets.pop(); saveDay(selectedDayId, day); } }
 
 function startWorkout() {
-  initAudio(); // Forcibly initialize the audio context upon user's first tap
-  
   var day = workoutDays[selectedDayId];
   if (!day || !day.exercises) return;
   awDayId = selectedDayId; awFlatSets = []; awCurrentIndex = 0; awAvailableOptionals = [];
@@ -954,25 +971,69 @@ function startWorkout() {
   var dColor = day.color || 'var(--primary)';
   document.getElementById('aw-title').textContent = day.name;
   
+  // Customise active workflow colours
   document.getElementById('aw-progress-fill').style.backgroundColor = dColor;
   document.getElementById('aw-set-detail').style.color = dColor;
   
+  // Bring up the Active Workout wrapper
   document.getElementById('active-workout').classList.add('active');
   
-  if (awFlatSets.length === 0 && awAvailableOptionals.length > 0) {
-      document.getElementById('aw-progress-text').textContent = "Select an optional exercise to start";
-      document.getElementById('aw-exercise-name').textContent = "";
-      document.getElementById('aw-set-info').textContent = "";
-      document.getElementById('aw-set-detail').innerHTML = "";
-      document.getElementById('aw-rest-preview').textContent = "";
-      document.getElementById('set-done-btn').style.display = 'none';
-      document.getElementById('aw-action-btns').style.display = 'none';
-      document.getElementById('aw-add-optional-btn').style.display = 'block';
-      showOptionalList();
-  } else {
-      document.getElementById('set-done-btn').style.display = 'block';
-      renderActiveSet();
-  }
+  // Show Start Screen, hide standard content
+  document.getElementById('aw-start-screen').style.display = 'flex';
+  document.getElementById('aw-start-title').textContent = day.name;
+  document.getElementById('aw-content').style.display = 'none';
+  document.getElementById('aw-footer').style.display = 'none';
+  document.getElementById('aw-progress').style.display = 'none';
+  
+  var startBtn = document.getElementById('aw-big-start-btn');
+  startBtn.textContent = 'START';
+  startBtn.style.pointerEvents = 'auto';
+  startBtn.style.background = 'var(--success)';
+}
+
+// Begins the 3 second countdown when you hit the massive green button
+function beginWorkoutCountdown() {
+    initAudio(); // Crucial: This explicitly unlocks iOS audio via touch event
+    
+    var btn = document.getElementById('aw-big-start-btn');
+    btn.style.pointerEvents = 'none';
+    var count = 3;
+    btn.textContent = count;
+    playBeep();
+    
+    var cd = setInterval(function() {
+        count--;
+        if (count > 0) {
+            btn.textContent = count;
+            playBeep();
+        } else {
+            clearInterval(cd);
+            playBeep(); // Final lower pitch or just generic beep
+            workoutStartTime = Date.now();
+            
+            // Switch from start screen back to standard workout layout
+            document.getElementById('aw-start-screen').style.display = 'none';
+            document.getElementById('aw-progress').style.display = 'block';
+            document.getElementById('aw-content').style.display = 'flex';
+            document.getElementById('aw-footer').style.display = 'block';
+            
+            // Edge case: empty workout (only optionals)
+            if (awFlatSets.length === 0 && awAvailableOptionals.length > 0) {
+                document.getElementById('aw-progress-text').textContent = "Select an optional exercise to start";
+                document.getElementById('aw-exercise-name').textContent = "";
+                document.getElementById('aw-set-info').textContent = "";
+                document.getElementById('aw-set-detail').innerHTML = "";
+                document.getElementById('aw-rest-preview').textContent = "";
+                document.getElementById('set-done-btn').style.display = 'none';
+                document.getElementById('aw-action-btns').style.display = 'none';
+                document.getElementById('aw-add-optional-btn').style.display = 'block';
+                showOptionalList();
+            } else {
+                document.getElementById('set-done-btn').style.display = 'block';
+                renderActiveSet();
+            }
+        }
+    }, 1000);
 }
 
 function updateAwActions() {
@@ -991,10 +1052,10 @@ function updateAwActions() {
 }
 
 function skipCurrentExerciseConfirm() {
-    showConfirm('Skip Exercise', 'Are you sure you want to skip this exercise?', skipCurrentExercise, 'Skip');
+    showConfirm('Skip Exercise', 'Are you sure you want to completely skip this exercise?', skipCurrentExercise, 'Skip');
 }
 function postponeCurrentExerciseConfirm() {
-    showConfirm('Do Later', 'Are you sure you want to do this exercise later?', postponeCurrentExercise, 'Do Later');
+    showConfirm('Do Later', 'Are you sure you want to pause this exercise and do it at the end?', postponeCurrentExercise, 'Do Later');
 }
 
 function skipCurrentExercise() {
@@ -1062,14 +1123,12 @@ function renderActiveSet() {
   document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
   
   var doneBtn = document.getElementById('set-done-btn');
-  // Add sets count to the Done Button UI
   doneBtn.textContent = 'SET DONE (' + s.setNum + '/' + s.totalSets + ')';
   doneBtn.classList.remove('resting');
   doneBtn.style.backgroundColor = dColor;
 }
 
 function setDone() {
-  initAudio(); 
   var btn = document.getElementById('set-done-btn');
   if (btn.classList.contains('resting')) { skipRest(); return; }
   if (awCurrentIndex >= awFlatSets.length) return;
@@ -1093,12 +1152,19 @@ function startRestTimer(seconds) {
   document.getElementById('rest-timer').classList.add('active');
   document.getElementById('timer-value').textContent = seconds;
   
-  var upcomingExName = awFlatSets[awCurrentIndex] ? awFlatSets[awCurrentIndex].exName : '';
-  document.getElementById('up-next-info').textContent = upcomingExName ? 'Up Next: ' + upcomingExName : '';
+  // Up Next Logic - ONLY display if the next set is Set #1 of a new exercise
+  var upcomingSet = awFlatSets[awCurrentIndex];
+  var upNextElem = document.getElementById('up-next-info');
+  if (upcomingSet && upcomingSet.setNum === 1) {
+      upNextElem.innerHTML = '<div style="font-size:14px; color:var(--text-secondary); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:4px;">Up Next</div><div style="font-size:26px; font-weight:800; color:var(--text);">' + upcomingSet.exName + '</div>';
+      upNextElem.style.display = 'block';
+  } else {
+      upNextElem.style.display = 'none';
+  }
+  
   updateAwActions();
   
   var doneBtn = document.getElementById('set-done-btn');
-  // Removed "s" from UI here
   doneBtn.textContent = 'SKIP REST (' + seconds + ')';
   doneBtn.classList.add('resting');
   doneBtn.style.backgroundColor = 'var(--teal)'; 
@@ -1148,7 +1214,6 @@ function addOptionalToWorkout(exId) {
     }
     
     awFlatSets.splice.apply(awFlatSets, [insertIndex, 0].concat(setsToAdd));
-    
     awAvailableOptionals = awAvailableOptionals.filter(id => id !== exId);
     closeOptionalModal();
     
@@ -1159,8 +1224,14 @@ function addOptionalToWorkout(exId) {
         document.getElementById('aw-progress-text').textContent = awCurrentIndex + ' of ' + total + ' sets completed';
         document.getElementById('aw-add-optional-btn').style.display = awAvailableOptionals.length > 0 ? 'block' : 'none';
         
-        var upcomingExName = awFlatSets[awCurrentIndex] ? awFlatSets[awCurrentIndex].exName : '';
-        document.getElementById('up-next-info').textContent = upcomingExName ? 'Up Next: ' + upcomingExName : '';
+        // Refresh "up next" if the injected exercise is literally next
+        var upcomingSet = awFlatSets[awCurrentIndex];
+        var upNextElem = document.getElementById('up-next-info');
+        if (upcomingSet && upcomingSet.setNum === 1) {
+            upNextElem.innerHTML = '<div style="font-size:14px; color:var(--text-secondary); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:4px;">Up Next</div><div style="font-size:26px; font-weight:800; color:var(--text);">' + upcomingSet.exName + '</div>';
+            upNextElem.style.display = 'block';
+        }
+        
         updateAwActions();
     } else {
         document.getElementById('set-done-btn').style.display = 'block';
@@ -1176,20 +1247,44 @@ function finishWorkout() {
   document.getElementById('active-workout').classList.remove('active');
   var day = workoutDays[awDayId]; var now = new Date();
   
+  var durationMs = workoutStartTime ? (Date.now() - workoutStartTime) : 0;
+  
   if (awCurrentIndex > 0) { 
-      saveHistoryEntry({ date: now.toISOString().split('T')[0], dayId: awDayId, dayName: day.name, dayColor: day.color || '#D95525', completedAt: now.getTime() });
+      saveHistoryEntry({ 
+          date: now.toISOString().split('T')[0], 
+          dayId: awDayId, 
+          dayName: day.name, 
+          dayColor: day.color || '#D95525', 
+          completedAt: now.getTime(),
+          duration: durationMs
+      });
   }
   
-  document.getElementById('complete-summary').textContent = day.name + ' \u2014 ' + awCurrentIndex + ' sets completed';
+  var summaryHtml = day.name + ' <br> ' + awCurrentIndex + ' sets completed';
+  if (durationMs > 0) {
+      var mins = Math.floor(durationMs / 60000);
+      var secs = Math.floor((durationMs % 60000) / 1000);
+      summaryHtml += '<br><small style="font-size:14px; opacity:0.8; margin-top:8px; display:block;">Time taken: ' + mins + 'm ' + secs + 's</small>';
+  }
+  
+  document.getElementById('complete-summary').innerHTML = summaryHtml;
   document.getElementById('complete-overlay').classList.add('active');
-  awDayId = null; awFlatSets = []; awCurrentIndex = 0; awAvailableOptionals = [];
+  awDayId = null; awFlatSets = []; awCurrentIndex = 0; awAvailableOptionals = []; workoutStartTime = null;
 }
+
 function completeWorkout() {
   var day = workoutDays[selectedDayId]; if (!day) return;
   if (day.exercises) { Object.values(day.exercises).forEach(function(ex){ ex.completed = true; if (ex.sets) ex.sets.forEach(function(s){s.completed=true}); }); saveDay(selectedDayId, day); }
   var now = new Date();
   
-  saveHistoryEntry({ date: now.toISOString().split('T')[0], dayId: selectedDayId, dayName: day.name, dayColor: day.color || '#D95525', completedAt: now.getTime() });
+  saveHistoryEntry({ 
+      date: now.toISOString().split('T')[0], 
+      dayId: selectedDayId, 
+      dayName: day.name, 
+      dayColor: day.color || '#D95525', 
+      completedAt: now.getTime(),
+      duration: 0 // Duration bypassed
+  });
   
   document.getElementById('complete-summary').textContent = day.name + ' \u2014 Workout logged!';
   document.getElementById('complete-overlay').classList.add('active');
@@ -1221,6 +1316,7 @@ function discardWorkoutEarly() {
     awFlatSets = []; 
     awCurrentIndex = 0; 
     awAvailableOptionals = [];
+    workoutStartTime = null;
 }
 
 function renderCalendar() {
@@ -1261,13 +1357,18 @@ function renderCalendar() {
         dotsHtml = '<div class="dots-container">' + dots + '</div>';
     }
     
-    html += '<div class="cal-day '+(isToday?'today':'')+'" onclick="showCalDetail(\''+dateStr+'\')">'+d+dotsHtml+'</div>';
+    html += '<div class="cal-day" data-date="'+dateStr+'" onclick="showCalDetail(\''+dateStr+'\')">'+d+dotsHtml+'</div>';
   }
   
   var totalCells = startDow + lastDay.getDate(); var remaining = (7-(totalCells%7))%7;
   for (var i = 1; i <= remaining; i++) html += '<div class="cal-day other-month">'+i+'</div>';
   document.getElementById('cal-grid').innerHTML = html;
-  document.getElementById('cal-details').innerHTML = '';
+  
+  // Auto Select Date Logic
+  var dateToSelect = isCurrentMonth 
+    ? year+'-'+String(month+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0') 
+    : year+'-'+String(month+1).padStart(2,'0')+'-01';
+  showCalDetail(dateToSelect);
 }
 
 function changeMonth(delta) { 
@@ -1285,6 +1386,11 @@ function goToToday() {
 }
 
 function showCalDetail(dateStr) {
+  // Highlight visually
+  document.querySelectorAll('.cal-day').forEach(el => el.classList.remove('selected'));
+  var targetEl = document.querySelector('.cal-day[data-date="'+dateStr+'"]');
+  if (targetEl) targetEl.classList.add('selected');
+
   var entries = [];
   Object.entries(workoutHistory).forEach(function(entry){ if (entry[1].date===dateStr) entries.push(Object.assign({_key:entry[0]},entry[1])); });
   var container = document.getElementById('cal-details');
@@ -1296,8 +1402,14 @@ function showCalDetail(dateStr) {
   } else {
     container.innerHTML = entries.map(function(e){
       var time = new Date(e.completedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+      var durStr = "";
+      if (e.duration > 0) {
+          var m = Math.floor(e.duration / 60000);
+          var s = Math.floor((e.duration % 60000) / 1000);
+          durStr = ' &bull; ' + m + 'm ' + s + 's';
+      }
       var dColor = e.dayColor || 'var(--primary)';
-      return '<div class="cal-detail" style="border-left-color: '+dColor+'"><div class="cal-detail-info"><h4>'+esc(e.dayName)+'</h4><p>'+dateLabel+' at '+time+'</p></div><button class="cal-delete-btn" onclick="confirmDeleteHistory(\''+e._key+'\',\''+dateStr+'\')" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div>';
+      return '<div class="cal-detail" style="border-left-color: '+dColor+'"><div class="cal-detail-info"><h4>'+esc(e.dayName)+'</h4><p>'+dateLabel+' at '+time+durStr+'</p></div><button class="cal-delete-btn" onclick="confirmDeleteHistory(\''+e._key+'\',\''+dateStr+'\')" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div>';
     }).join('');
   }
 }
