@@ -625,15 +625,52 @@ let audioCtx;
 let selectedDayColor = "#D95525";
 let awAvailableOptionals = [];
 let workoutStartTime = null; 
+let wakeLock = null; // Used for keeping the iOS screen alive
+
+// Request Wake Lock to prevent the screen sleeping
+async function acquireWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) { console.warn('Wake Lock error:', err); }
+  }
+}
+function releaseWakeLock() {
+  if (wakeLock !== null) {
+    wakeLock.release();
+    wakeLock = null;
+  }
+}
+// Re-acquire lock if user tabs away and comes back during a workout
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && document.getElementById('active-workout').classList.contains('active')) {
+    acquireWakeLock();
+  }
+});
 
 function initAudio() {
-  if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-  if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+  if (!audioCtx) {
+    var AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) audioCtx = new AudioContext();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
 }
+
+// Binds initAudio to ALL interactions to aggressively prevent iOS from suspending it
+['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }, { passive: true });
+});
 
 function playBeep() {
   try {
-    if (!audioCtx) initAudio();
+    initAudio(); 
+    if (!audioCtx) return;
     var osc = audioCtx.createOscillator();
     var gainNode = audioCtx.createGain();
     osc.type = 'sine';
@@ -978,6 +1015,8 @@ function startWorkout() {
 }
 
 function beginWorkoutCountdown() {
+    acquireWakeLock(); // Keep screen ON
+    
     var btn = document.getElementById('aw-big-start-btn');
     btn.style.pointerEvents = 'none';
     var count = 3;
@@ -1224,8 +1263,9 @@ function closeOptionalModal() {
 function finishWorkout() {
   clearInterval(restTimerInterval);
   document.getElementById('active-workout').classList.remove('active');
-  var day = workoutDays[awDayId]; var now = new Date();
+  releaseWakeLock(); // Allow screen to sleep again
   
+  var day = workoutDays[awDayId]; var now = new Date();
   var durationMs = workoutStartTime ? (Date.now() - workoutStartTime) : 0;
   
   if (awCurrentIndex > 0) { 
@@ -1291,6 +1331,7 @@ function discardWorkoutEarly() {
     closeEndEarlyModal();
     clearInterval(restTimerInterval); 
     document.getElementById('active-workout').classList.remove('active'); 
+    releaseWakeLock(); // Allow screen to sleep again
     awDayId = null; 
     awFlatSets = []; 
     awCurrentIndex = 0; 
