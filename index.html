@@ -37,13 +37,14 @@ body { display: flex; flex-direction: column; }
 }
 #auth-screen .logo { font-size: 48px; font-weight: 800; color: var(--primary); letter-spacing: -2px; }
 #auth-screen .tagline { font-size: 16px; color: var(--text-secondary); max-width: 260px; line-height: 1.5; }
+#auth-screen .auth-buttons { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 280px; }
 #auth-screen button {
-  display: flex; align-items: center; gap: 12px; padding: 14px 32px; border-radius: 50px;
+  display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 24px; border-radius: 50px;
   border: 2px solid var(--border); background: var(--card); font-family: inherit;
-  font-size: 16px; font-weight: 600; cursor: pointer; transition: all .2s;
+  font-size: 16px; font-weight: 600; cursor: pointer; transition: all .2s; width: 100%;
 }
 #auth-screen button:active { transform: scale(0.97); background: var(--bg); }
-#auth-screen button svg { width: 22px; height: 22px; }
+#auth-screen button svg { width: 22px; height: 22px; flex-shrink: 0; }
 #app { display: none; flex-direction: column; height: 100%; }
 #app.active { display: flex; }
 .app-header {
@@ -396,10 +397,18 @@ body { display: flex; flex-direction: column; }
 <div id="auth-screen">
   <div class="logo">FitTrack</div>
   <p class="tagline">Your personal training programme. Track workouts, crush goals.</p>
-  <button onclick="signIn()">
-    <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-    Sign in with Google
-  </button>
+  
+  <div class="auth-buttons">
+    <button onclick="signInWithGoogle()">
+      <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Sign in with Google
+    </button>
+    <button onclick="signInWithMicrosoft()">
+      <svg viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+      Sign in with Microsoft
+    </button>
+  </div>
+  
   <div id="config-warning" style="display:none; max-width:320px; margin-top:12px;">
     <div class="config-notice"><strong>Firebase not configured.</strong> Update the firebaseConfig object in index.html.</div>
   </div>
@@ -625,7 +634,7 @@ let audioCtx;
 let selectedDayColor = "#D95525";
 let awAvailableOptionals = [];
 let workoutStartTime = null; 
-let wakeLock = null; // Used for keeping the iOS screen alive
+let wakeLock = null; 
 
 // Request Wake Lock to prevent the screen sleeping
 async function acquireWakeLock() {
@@ -641,36 +650,21 @@ function releaseWakeLock() {
     wakeLock = null;
   }
 }
-// Re-acquire lock if user tabs away and comes back during a workout
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && document.getElementById('active-workout').classList.contains('active')) {
     acquireWakeLock();
   }
 });
 
+// Using the original working sound function without the iOS workaround
 function initAudio() {
-  if (!audioCtx) {
-    var AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) audioCtx = new AudioContext();
-  }
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
+  if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  if (audioCtx.state === 'suspended') { audioCtx.resume(); }
 }
-
-// Binds initAudio to ALL interactions to aggressively prevent iOS from suspending it
-['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(evt => {
-  document.addEventListener(evt, () => {
-    if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-  }, { passive: true });
-});
 
 function playBeep() {
   try {
-    initAudio(); 
-    if (!audioCtx) return;
+    if (!audioCtx) initAudio();
     var osc = audioCtx.createOscillator();
     var gainNode = audioCtx.createGain();
     osc.type = 'sine';
@@ -697,11 +691,18 @@ function initFirebase() {
 }
 const firebaseReady = initFirebase();
 
-function signIn() {
+function signInWithGoogle() {
   if (!firebaseReady) { alert('Please configure Firebase first.'); return; }
   const provider = new firebase.auth.GoogleAuthProvider();
   auth.signInWithPopup(provider).catch(e => alert('Sign-in failed: ' + e.message));
 }
+
+function signInWithMicrosoft() {
+  if (!firebaseReady) { alert('Please configure Firebase first.'); return; }
+  const provider = new firebase.auth.OAuthProvider('microsoft.com');
+  auth.signInWithPopup(provider).catch(e => alert('Sign-in failed: ' + e.message));
+}
+
 function signOut() { if (auth) auth.signOut(); }
 
 if (firebaseReady) {
@@ -1149,6 +1150,7 @@ function renderActiveSet() {
 }
 
 function setDone() {
+  initAudio(); 
   var btn = document.getElementById('set-done-btn');
   if (btn.classList.contains('resting')) { skipRest(); return; }
   if (awCurrentIndex >= awFlatSets.length) return;
@@ -1263,7 +1265,7 @@ function closeOptionalModal() {
 function finishWorkout() {
   clearInterval(restTimerInterval);
   document.getElementById('active-workout').classList.remove('active');
-  releaseWakeLock(); // Allow screen to sleep again
+  releaseWakeLock(); 
   
   var day = workoutDays[awDayId]; var now = new Date();
   var durationMs = workoutStartTime ? (Date.now() - workoutStartTime) : 0;
@@ -1331,7 +1333,7 @@ function discardWorkoutEarly() {
     closeEndEarlyModal();
     clearInterval(restTimerInterval); 
     document.getElementById('active-workout').classList.remove('active'); 
-    releaseWakeLock(); // Allow screen to sleep again
+    releaseWakeLock(); 
     awDayId = null; 
     awFlatSets = []; 
     awCurrentIndex = 0; 
